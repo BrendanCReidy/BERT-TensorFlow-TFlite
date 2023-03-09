@@ -1,6 +1,6 @@
-# BERT->TensorFlow2->TFlite
+# BERT &rarr TensorFlow2 &rarr TFlite
 
-This repository contians a pipeline for:
+This repository contains a pipeline for:
 1.  Loading TF1 BERT models in TF2
 2.  Training BERT models for downstream tasks (with or without knowledge distillation)
 3.  Exporting BERT models as TFLite files
