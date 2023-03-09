@@ -1,4 +1,4 @@
-# BERT-TensorFlow-TFlite
+# BERT->TensorFlow2->TFlite
 
 This repository contians a pipeline for:
 1.  Loading TF1 BERT models in TF2
