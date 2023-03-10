@@ -26,17 +26,6 @@ DEFAULT_PARTITION_CONFIG = {
     "use_conv":False
 }
 
-def deserialize_partition_config(partition_config):
-    if partition_config==None:
-        partition_config=DEFAULT_PARTITION_CONFIG
-    if isinstance(partition_config, str):
-        partition_config=json.loads(partition_config)
-    return partition_config
-
-def relu(x):
-    y = tf.constant([0.])
-    return tf.math.maximum(x, y)
-
 def approx_gelu(x):
     return x*tf.math.sigmoid(1.702*x)
 
