@@ -20,7 +20,7 @@ parser.add_argument('--epochs', default=20, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('-b', '--batch-size', default=16, type=int,
                     metavar='N', help='mini-batch size (default: 128)')
-parser.add_argument('--lr', '--learning-rate', default=2e-5, type=float,
+parser.add_argument('--lr', '--learning-rate', default=1e-5, type=float,
                     metavar='LR', help='initial learning rate')
 parser.add_argument('--task-balance', "--balance", default=0.8, type=float,
                     metavar='balance', help='task balance')
@@ -154,6 +154,8 @@ teacher_model.compile(
     loss=teacher_loss_object,
     metrics=teacher_metrics)
 
+best_loss = 999
+best_ds = []
 for epoch in range(epochs):
     # Reset the metrics at the start of the next epoch
     train_loss.reset_states()
@@ -190,8 +192,11 @@ for epoch in range(epochs):
                 teacher_train_accuracy.result() * 100,
                 teacher_test_loss.result(),
                 teacher_test_accuracy.result() * 100))
-    
-    for x_train, y_train_hard, y_train_soft in transfer_ds:
+    if teacher_test_loss.result() < best_loss:
+        best_loss = teacher_test_loss.result()
+        best_ds = transfer_ds
+
+    for x_train, y_train_hard, y_train_soft in best_ds:
         with tf.GradientTape() as tape:
             predictions = student_model(x_train)
 

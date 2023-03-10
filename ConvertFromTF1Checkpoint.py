@@ -5,11 +5,26 @@
 # Last Modified: Mar 9 2023
 #
 
+"""
+This file loads a TF1 checkpoint of BERT into our TF2 BERT transformer model
+
+This is done by manually evaluating the state dict (weights + names) of the
+TF1 checkpoint and mapping those onto our transformer implementation. A few
+of the layers need to be reshaped or do not map 1:1 with our implmentation
+but can be mapped using multiple layers
+"""
+
 import tensorflow as tf
 import json
 import TransformerModel
 import re
 from tensorflow.python.training import py_checkpoint_reader
+
+"""
+This word-to-vec stuff can mostly be ignored. It was mostly used during the
+mapping stage to help semi-automate the weight mapping by finding weights
+that are similar in name and to catch typos
+"""
 WORD = re.compile(r"\w+")
 mappedWeights = []
 outputMap = []
@@ -35,9 +50,12 @@ def cosdis(v1, v2):
     common = v1[1].intersection(v2[1])
     # by definition of cosine distance we have
     return sum(v1[0][ch]*v2[0][ch] for ch in common)/v1[2]/v2[2]
-def load_checkpoint(file_name):
 
-    # Need to say "model.ckpt" instead of "model.ckpt.index" for tf v2
+
+def load_checkpoint(file_name):
+    """
+    Loads the TF checkpoint into a standard python dict
+    """
     reader = py_checkpoint_reader.NewCheckpointReader(file_name)
 
     state_dict = {
@@ -46,7 +64,17 @@ def load_checkpoint(file_name):
     return state_dict
 
 def from_tf1_checkpoint(tf1_checkpoint_path, configPath, partition_config, seq_len=128, name="transformer"):
+    """
+    Inputs
+        tf1_checkpoint_path: path to tf1 checkpoint file
+        configPath: path to BERT config json
+        partition_config: used for edge devices to partition larger layers
+        seq_len: size of the seq_len dimension
+        name: name of the model
 
+    Output
+        BERT model with tf1 weights loaded onto model
+    """
     tf1_checkpoint = load_checkpoint(tf1_checkpoint_path)
     global unusedValues
     unusedValues = tf1_checkpoint
@@ -77,12 +105,22 @@ def from_tf1_checkpoint(tf1_checkpoint_path, configPath, partition_config, seq_l
     return encoder_model
 
 def removeFromList(name):
+    """
+    Keep track of which weights have been mapped from tf1 -> tf2
+    this helps make sure all weights are mapped effectively
+    """
     global mappedWeights
     if name in mappedWeights:
         mappedWeights.remove(name)
     else:
         print("ERROR", name, "not in list")
+
+
 def getWeightByName(state_dict, name, exact=False):
+    """
+    Gets weight in state_dict with matching name
+    If it fails, it tells you the closest name to what you were looking for
+    """
     closest = -9999999999999999999
     closestVal = None
     for weight_name in state_dict.keys():
@@ -98,6 +136,10 @@ def getWeightByName(state_dict, name, exact=False):
     raise Exception("ModelConverter was unable to find layer: " + name + "\nDid you mean " + str(closestVal))
 
 def setWeightByName(model, name, inWeight, pseudoName):
+    """
+    Gets weight in TF2 model with matching name
+    If it fails, it tells you the closest name to what you were looking for
+    """
     global outputMap
     global unusedValues
     unusedValues[pseudoName] = None
@@ -121,6 +163,9 @@ def setWeightByName(model, name, inWeight, pseudoName):
         
 
 def injectEmbeddings(fromModel, toModel, n_partitions=1):
+    """
+    Manually maps tf1 embedding layer weights to the tf2 embedding layer weights
+    """
     cName1, word_embeddings = getWeightByName(fromModel, "word_embeddings")
     cName2, position_embedding = getWeightByName(fromModel, "position_embedding")
     cName3, type_embeddings = getWeightByName(fromModel, "type_embeddings")
@@ -140,6 +185,9 @@ def injectEmbeddings(fromModel, toModel, n_partitions=1):
     print("Successfuly injected embedding values")
 
 def injectMHA(fromModel, toModel, num_heads, layer=0, n_partitions=1):
+    """
+    Manually maps tf1 MHA layer weights to the tf2 MHA layer weights
+    """
     n1, attn_layer_norm_gamma = getWeightByName(fromModel, "layer_" + str(layer) + "/attention/output/LayerNorm/gamma")
     n2, attn_layer_norm_beta = getWeightByName(fromModel, "layer_" + str(layer) + "/attention/output/LayerNorm/beta")
     n3, out_layer_norm_gamma = getWeightByName(fromModel, "layer_" + str(layer) + "/output/LayerNorm/gamma")
@@ -213,6 +261,9 @@ def injectMHA(fromModel, toModel, num_heads, layer=0, n_partitions=1):
 
 
 def inject_weights(fromModel, toModel, n_layers, num_heads, n_partitions=1):
+    """
+    Manually maps tf1 weights to the tf2 weights
+    """
     global mappedWeights
     global outputMap
     mappedWeights = []
@@ -229,6 +280,10 @@ def inject_weights(fromModel, toModel, n_layers, num_heads, n_partitions=1):
     showOuputMap(outdir="model_mapping.log")
 
 def showOuputMap(outdir=None):
+    """
+    Used for debugging. Shows which weights have been mapped and where they came
+    from in the tf1 model
+    """
     global outputMap
     global mappedWeights
     global unusedValues
@@ -258,6 +313,9 @@ def showOuputMap(outdir=None):
 
 
 def getTrainableParams(model):
+    """
+    Gets trainable parameters in the model
+    """
     totalSize = 0
     for weight in model.weights:
         currSize = 1

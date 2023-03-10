@@ -76,7 +76,7 @@ class ScaledDotProduct(tf.keras.layers.Layer):
         }
 
 
-    def call(self, q, k, v, mask=None):
+    def call(self, q, k, v, mask):
         q = self.dense_q(q)
         k = self.dense_k(k)
         v = self.dense_v(v)
@@ -84,8 +84,8 @@ class ScaledDotProduct(tf.keras.layers.Layer):
         matmul_qk = tf.matmul(q, k, transpose_b=True)
         dk = tf.cast(tf.shape(k)[-1], tf.float32)
         scaled_attention_logits = matmul_qk / tf.math.sqrt(dk)
-        if not mask is None:
-            scaled_attention_logits += mask
+        #if not mask is None:
+        scaled_attention_logits += mask
         attention_weights = self.softmax(scaled_attention_logits, axis=-1)
         output = tf.matmul(attention_weights, v)
         return  output
@@ -117,7 +117,7 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
     def get_config(self):
         return {'d_model': self.d_model, 'num_heads': self.num_heads, 'name':self.name, 'activation':self.activation}
 
-    def call(self, q, k, v, mask, training=True):
+    def call(self, q, k, v, mask, training=False):
         attention_outputs = []
         for head in self.attention_heads:
             attention_outputs.append(head(q, k, v, mask))
@@ -144,7 +144,8 @@ class BERTMultiHeadedAttention(tf.keras.layers.Layer):
         self.activation = activation
         self.act_out = activations.get(activation)
         self.d_model = d_model
-        self.dropout = tf.keras.layers.Dropout(rate)
+        self.dropout1 = tf.keras.layers.Dropout(rate)
+        self.dropout2 = tf.keras.layers.Dropout(rate)
         self.mha_ffn = ConfigurableDense(self.d_model, inp_size=self.d_model, use_conv=self.use_conv, name=self.name + "attention_output")
 
     def build(self, input_shape):
@@ -160,15 +161,16 @@ class BERTMultiHeadedAttention(tf.keras.layers.Layer):
             'partition_config':self.partition_config
             }
 
-    def call(self, q, k, v, mask, training=True):
+    def call(self, q, k, v, mask, training=False):
         attention_outputs = []
         for head in self.attention_heads:
             attention_outputs.append(head(q, k, v, mask))
         x = attention_outputs[0]
         if self.num_heads>1:
             x = tf.keras.layers.concatenate(attention_outputs)
+        x = self.dropout1(x, training=training)
         x = self.mha_ffn(x)
-        x = self.dropout(x, training=training)
+        x = self.dropout2(x, training=training)
         return x
 
 class ConfigurableDense(tf.keras.layers.Layer):
@@ -403,13 +405,13 @@ class BERT(tf.keras.layers.Layer):
     def build(self, input_shape):
         pass
 
-    def call(self, x, seg, mask, training=True):
+    def call(self, x, seg, mask, training=False):
         mask = tf.expand_dims(mask, axis=1)
         mask = mask*1e-9
 
         x = self.embedding(x,seg)
         for layer in self.enc_layers:
-            x = layer(x, mask)
+            x = layer(x, mask, training=training)
         x = x[:,0]
         x = self.act_out(self.pooler_ffn(x))
         return x
@@ -462,8 +464,8 @@ class BertEncoder(tf.keras.layers.Layer):
     def build(self, input_shape):
         pass
 
-    def call(self, x, mask, training=True):
-        attn_output = self.mha(x, x, x, mask)
+    def call(self, x, mask, training=False):
+        attn_output = self.mha(x, x, x, mask, training=training)
         attn_output = self.dropout1(attn_output, training=training)
         out1 = self.layernorm1(x + attn_output)
         ffn_output1 = self.dff(out1)
@@ -544,7 +546,7 @@ class EncoderLayer(tf.keras.layers.Layer):
     def build(self, input_shape):
         pass
 
-    def call(self, x, mask, training=True):
+    def call(self, x, mask, training=False):
         attn_output = self.mha(x, x, x, mask)
         attn_output = self.dropout1(attn_output, training=training)
         out1 = self.layernorm1(x + attn_output)
@@ -592,7 +594,7 @@ class DecoderLayer(tf.keras.layers.Layer):
     def build(self, input_shape):
         pass
 
-    def call(self, x, enc_output, combined_mask, pad_mask, training=True):
+    def call(self, x, enc_output, combined_mask, pad_mask, training=False):
         attn1 = self.mha1(x, x, x, combined_mask)  # (batch_size, target_seq_len, d_model)
         attn1 = self.dropout1(attn1, training=training)
         out1 = self.layernorm1(attn1 + x)
@@ -648,7 +650,7 @@ class Encoder(tf.keras.layers.Layer):
             self.enc_layers[i].build([self.d_model])
 
 
-    def call(self, x, mask, training=True):
+    def call(self, x, mask, training=False):
         seq_len = tf.shape(x)[1]
         x = self.embedding(x)  # (batch_size, input_seq_len, d_model)
         x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
@@ -701,7 +703,7 @@ class Decoder(tf.keras.layers.Layer):
             self.dec_layers[i].build([self.d_model])
 
 
-    def call(self, x, enc_output, enc_mask, combined_mask, training=True):
+    def call(self, x, enc_output, enc_mask, combined_mask, training=False):
 
         seq_len = tf.shape(x)[1]
         x = self.embedding(x)

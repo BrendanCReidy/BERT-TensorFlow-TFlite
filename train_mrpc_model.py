@@ -4,17 +4,18 @@ import tempfile
 import tensorflow as tf
 import tensorflow_models as tfm
 import tensorflow_datasets as tfds
+import tensorflow_addons as tfa
 
 import TransformerModel
 import ConvertModel
 
 import argparse
 
-os.environ["CUDA_VISIBLE_DEVICES"]="1"
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
 parser = argparse.ArgumentParser(description='Train MRPC for BERT')
 parser.add_argument('model_dir',
                     help='Directory containing BERT cfg file', type=str)
-parser.add_argument('--epochs', default=20, type=int, metavar='N',
+parser.add_argument('--epochs', default=10, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('-b', '--batch-size', default=16, type=int,
                     metavar='N', help='mini-batch size (default: 128)')
@@ -86,14 +87,12 @@ num_train_steps = steps_per_epoch * epochs
 warmup_steps = args.warmup_steps
 initial_learning_rate=args.lr
 
-linear_decay = tf.keras.optimizers.schedules.PolynomialDecay(
-    initial_learning_rate=initial_learning_rate,
-    end_learning_rate=0,
-    decay_steps=num_train_steps)
+cosine_lr = tf.keras.optimizers.schedules.CosineDecay(
+    initial_learning_rate, steps_per_epoch*epochs)
 
 warmup_schedule = tfm.optimization.lr_schedule.LinearWarmup(
     warmup_learning_rate = 0,
-    after_warmup_lr_sched = linear_decay,
+    after_warmup_lr_sched = cosine_lr,
     warmup_steps = warmup_steps
 )
 optimizer = tf.keras.optimizers.experimental.Adam(
