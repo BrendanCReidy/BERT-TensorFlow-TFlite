@@ -16,7 +16,7 @@ parser.add_argument('student_dir',
                     help='Directory containing student BERT cfg file', type=str)
 parser.add_argument('teacher_dir',
                     help='Directory containing teacher BERT cfg file', type=str)
-parser.add_argument('--epochs', default=20, type=int, metavar='N',
+parser.add_argument('--epochs', default=1, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('-b', '--batch-size', default=16, type=int,
                     metavar='N', help='mini-batch size (default: 128)')
@@ -35,9 +35,10 @@ args = parser.parse_args()
 
 student_dir = args.student_dir
 teacher_dir = args.teacher_dir
-model_name = student_dir
-if "/" in student_dir:
-    model_name = student_dir.split("/")[-1]
+
+student_name = os.path.basename(student_dir)
+teacher_name = os.path.basename(teacher_dir)
+
 
 epochs = args.epochs
 max_seq_length = args.sl
@@ -229,7 +230,7 @@ for epoch in range(epochs):
                 test_accuracy.result() * 100))
 
 student_model.evaluate(glue_validation)
-student_model.save("student.h5", include_optimizer=False)
+student_model.save("student-" + student_name + ".h5", include_optimizer=False)
 teacher_model.evaluate(glue_validation)
-teacher_model.save("teacher.h5", include_optimizer=False)
+teacher_model.save("teacher-" + teacher_name + ".h5", include_optimizer=False)
 #"""

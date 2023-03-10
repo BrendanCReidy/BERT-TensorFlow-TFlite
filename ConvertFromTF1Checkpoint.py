@@ -142,7 +142,6 @@ def setWeightByName(model, name, inWeight, pseudoName):
     """
     global outputMap
     global unusedValues
-    unusedValues[pseudoName] = None
     closest = -9999999999999999999
     closestVal = None
     for i, weight in enumerate(model.weights):
@@ -158,6 +157,7 @@ def setWeightByName(model, name, inWeight, pseudoName):
             model.weights[i].assign(inWeight)
             outputMap.append((str([pseudoName, inWeight.shape]), str([weight.name, weight.shape])))
             removeFromList(weight.name)
+            unusedValues[pseudoName] = None
             return
     raise Exception("ModelConverter was unable to find layer: " + name + "\nDid you mean " + str(closestVal))
         
@@ -199,16 +199,9 @@ def injectMHA(fromModel, toModel, num_heads, layer=0, n_partitions=1):
 
     n1,intermediate_kernel = getWeightByName(fromModel, "layer_" + str(layer) + "/intermediate/dense/kernel")
     n2,intermediate_bias = getWeightByName(fromModel, "layer_" + str(layer) + "/intermediate/dense/bias")
-    try:
-        partition_size = int(intermediate_kernel.shape[-1] / n_partitions)
-        for i in range(n_partitions):
-            temp_intermediate = intermediate_kernel[:,i*partition_size:(i+1)*partition_size]
-            temp_intermediate_bias = intermediate_bias[i*partition_size:(i+1)*partition_size]
-            setWeightByName(toModel, "layer_" + str(layer) + "/intermediate/partition_out" + str(i) + "/kernel", temp_intermediate,n1)
-            setWeightByName(toModel, "layer_" + str(layer) + "/intermediate/partition_out" + str(i) + "/bias", temp_intermediate_bias,n2)
-    except:
-        setWeightByName(toModel, "layer_" + str(layer) + "/intermediate/kernel", intermediate_kernel,n1)
-        setWeightByName(toModel, "layer_" + str(layer) + "/intermediate/bias", intermediate_bias,n1)
+
+    setWeightByName(toModel, "layer_" + str(layer) + "/intermediate/kernel", intermediate_kernel,n1)
+    setWeightByName(toModel, "layer_" + str(layer) + "/intermediate/bias", intermediate_bias,n2)
 
     
 
