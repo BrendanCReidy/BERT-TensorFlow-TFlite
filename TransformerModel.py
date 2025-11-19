@@ -26,6 +26,27 @@ DEFAULT_PARTITION_CONFIG = {
     "use_conv":False
 }
 
+EDGETPU_BERT_TINY = EDGETPU_BERT_MINI = EDGETPU_BERT_MEDIUM = {
+    "intermediate_partitions":1,
+    "fc_out_partitions":1,
+    "embedding_partitions":1,
+    "use_conv":True
+}
+
+EDGETPU_BERT_BASE = {
+    "intermediate_partitions":2,
+    "fc_out_partitions":2,
+    "embedding_partitions":2,
+    "use_conv":True
+}
+
+EDGETPU_BERT_LARGE = {
+    "intermediate_partitions":2,
+    "fc_out_partitions":2,
+    "embedding_partitions":2,
+    "use_conv":True
+}
+
 def approx_gelu(x):
     return x*tf.math.sigmoid(1.702*x)
 
@@ -78,44 +99,6 @@ class ScaledDotProduct(tf.keras.layers.Layer):
         attention_weights = self.softmax(scaled_attention_logits, axis=-1)
         output = tf.matmul(attention_weights, v)
         return  output
-
-class MultiHeadedAttention(tf.keras.layers.Layer):
-    def __init__(self, num_heads, d_model, activation='gelu', name=None):
-        super(MultiHeadedAttention, self).__init__(name=name)
-        self.attention_heads = []
-        for i in range(num_heads):
-            sdp = ScaledDotProduct(d_model, int(d_model/num_heads), activation=activation, name=self.name + 'scaled_dot_product' + str(i))
-            self.attention_heads.append(sdp)
-        self.num_heads = num_heads
-        self.activation = activation
-        self.act_out = activations.get(activation)
-        if activation == 'gelu':
-            self.act_out = approx_gelu
-        self.d_model = d_model
-
-    def build(self, input_shape):
-        for head in self.attention_heads:
-            head.build(input_shape)
-        self.kernel = self.add_weight(self.name + "_kernel",shape=[int(self.d_model/self.num_heads),self.d_model],
-                initializer='random_normal',
-                trainable=True)
-        self.bias = self.add_weight(self.name + "_bias",shape=[self.d_model],
-                initializer='random_normal',
-                trainable=True)
-
-    def get_config(self):
-        return {'d_model': self.d_model, 'num_heads': self.num_heads, 'name':self.name, 'activation':self.activation}
-
-    def call(self, q, k, v, mask, training=False):
-        attention_outputs = []
-        for head in self.attention_heads:
-            attention_outputs.append(head(q, k, v, mask))
-        x = attention_outputs[0]
-        if self.num_heads>1:
-            x = tf.keras.layers.concatenate(attention_outputs)
-        x = self.act_out(tf.matmul(x, self.kernel) + self.bias)
-        return x
-
 
 class BERTMultiHeadedAttention(tf.keras.layers.Layer):
     def __init__(self, num_heads, d_model, rate=0.1, partition_config=None, activation='gelu', name=None):
@@ -498,209 +481,4 @@ class DynamicLayerNormalization(tf.keras.layers.Layer):
         y = x - mean
         x = y*tf.math.rsqrt(self.epsilon + var)
         x = x * self.weight + self.bias
-        return x
-    
-
-class EncoderLayer(tf.keras.layers.Layer):
-    def __init__(self, num_heads, d_model, dff, partition_config=None, rate=0.1, name=None):
-        super(EncoderLayer, self).__init__(name=name)
-        if partition_config==None:
-            partition_config = DEFAULT_PARTITION_CONFIG
-
-        self.d_model = d_model
-        self.num_heads = num_heads
-        self.dff = dff
-        self.rate = rate
-
-        self.mha = BERTMultiHeadedAttention(num_heads, d_model, activation='relu', partition_config=partition_config, name = "mha")
-        
-        self.layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-12)
-        self.layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-12)
-        
-        self.dropout1 = tf.keras.layers.Dropout(rate)
-        self.dropout2 = tf.keras.layers.Dropout(rate)
-
-        self.intr = ConfigurableDense(self.dff, inp_size=self.d_model, activation='relu', use_conv=partition_config["use_conv"])
-        self.fc_out = ConfigurableDense(self.d_model, inp_size=self.dff, activation='relu', use_conv=partition_config["use_conv"])
-
-    def get_config(self):
-        return {
-            'd_model': self.d_model,
-            'num_heads': self.num_heads,
-            'dff':self.dff,
-            'rate':self.rate,
-            'name':self.name
-            }
-
-    def build(self, input_shape):
-        pass
-
-    def call(self, x, mask, training=False):
-        attn_output = self.mha(x, x, x, mask)
-        attn_output = self.dropout1(attn_output, training=training)
-        out1 = self.layernorm1(x + attn_output)
-        
-        ffn_output1 = self.intr(out1)
-        ffn_output2 = self.fc_out(ffn_output1)
-        ffn_output3 = self.dropout2(ffn_output2, training=training)
-        out2 = self.layernorm2(out1 + ffn_output3)
-        
-        return out2
-
-class DecoderLayer(tf.keras.layers.Layer):
-    def __init__(self, num_heads, d_model, dff, partition_config=None, rate=0.1, name=None):
-        super(DecoderLayer, self).__init__(name=name)
-        if partition_config==None:
-            partition_config = DEFAULT_PARTITION_CONFIG
-        self.d_model = d_model
-        self.num_heads = num_heads
-        self.dff = dff
-        self.rate = rate
-
-        self.mha1 = BERTMultiHeadedAttention(num_heads, d_model, activation='relu', partition_config=partition_config, name = "mha")
-        self.mha2 = BERTMultiHeadedAttention(num_heads, d_model, activation='relu', partition_config=partition_config, name = "mha")
-
-        self.layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-12)
-        self.layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-12)
-        self.layernorm3 = tf.keras.layers.LayerNormalization(epsilon=1e-12)
-        
-        self.dropout1 = tf.keras.layers.Dropout(rate)
-        self.dropout2 = tf.keras.layers.Dropout(rate)
-        self.dropout3 = tf.keras.layers.Dropout(rate)
-
-        self.intr = ConfigurableDense(self.dff, inp_size=self.d_model, activation='relu', use_conv=partition_config["use_conv"])
-        self.fc_out = ConfigurableDense(self.d_model, inp_size=self.dff, activation='relu', use_conv=partition_config["use_conv"])
-
-    def get_config(self):
-        return {
-            'd_model': self.d_model,
-            'num_heads': self.num_heads,
-            'dff':self.dff,
-            'rate':self.rate,
-            'name':self.name
-            }
-
-    def build(self, input_shape):
-        pass
-
-    def call(self, x, enc_output, combined_mask, pad_mask, training=False):
-        attn1 = self.mha1(x, x, x, combined_mask)  # (batch_size, target_seq_len, d_model)
-        attn1 = self.dropout1(attn1, training=training)
-        out1 = self.layernorm1(attn1 + x)
-        
-        attn2 = self.mha2(out1, enc_output, enc_output, pad_mask)
-        attn2 = self.dropout2(attn2, training=training)
-        out2 = self.layernorm2(attn2 + out1)
-        
-        ffn_output = self.intr(out2)
-        ffn_output = self.fc_out(ffn_output)
-        ffn_output = self.dropout3(ffn_output, training=training)
-        out3 = self.layernorm3(ffn_output + out2)
-        
-        return out3
-
-class Encoder(tf.keras.layers.Layer):
-    def __init__(self, num_layers, num_heads, d_model, dff, input_vocab_size,
-            maximum_position_encoding, partition_config=None, rate=0.1, name=None):
-        super(Encoder, self).__init__(name=name)
-        if partition_config==None:
-            partition_config = DEFAULT_PARTITION_CONFIG
-        self.d_model = d_model
-        self.num_layers = num_layers
-        self.num_heads = num_heads
-        self.dff = dff
-        self.input_vocab_size = input_vocab_size
-        self.maximum_position_encoding = maximum_position_encoding
-        self.rate = rate
-        
-        self.embedding = tf.keras.layers.Embedding(input_vocab_size, d_model)
-        self.pos_encoding = positional_encoding(maximum_position_encoding, 
-                                                self.d_model)
-
-        self.enc_layers = [EncoderLayer(num_heads, d_model, dff, rate=rate, partition_config=partition_config, name=self.name + str(i)) 
-                        for i in range(num_layers)]
-    
-        self.dropout = tf.keras.layers.Dropout(rate)
-
-    def get_config(self):
-        return {
-            'num_layers': self.num_layers,
-            'input_vocab_size': self.input_vocab_size,
-            'maximum_position_encoding': self.maximum_position_encoding,
-            'd_model': self.d_model,
-            'num_heads': self.num_heads,
-            'dff':self.dff,
-            'rate':self.rate,
-            'name':self.name
-            }
-
-    def build(self, input_shape):
-        for i in range(self.num_layers):
-            self.enc_layers[i].build([self.d_model])
-
-
-    def call(self, x, mask, training=False):
-        seq_len = tf.shape(x)[1]
-        x = self.embedding(x)  # (batch_size, input_seq_len, d_model)
-        x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
-        x += self.pos_encoding[:, :seq_len, :]
-
-        x = self.dropout(x, training=training)
-        
-        for i in range(self.num_layers):
-            x = self.enc_layers[i](x, mask, training=training)
-        return x
-
-
-class Decoder(tf.keras.layers.Layer):
-    def __init__(self, num_layers, num_heads, d_model, dff, target_vocab_size,
-            maximum_position_encoding, partition_config=None, rate=0.1, name=None):
-        super(Decoder, self).__init__(name=name)
-        if partition_config==None:
-            partition_config = DEFAULT_PARTITION_CONFIG
-        self.d_model = d_model
-        self.num_layers = num_layers
-        self.num_heads = num_heads
-        self.dff = dff
-        self.target_vocab_size = target_vocab_size
-        self.maximum_position_encoding = maximum_position_encoding
-        self.rate = rate
-        
-        self.embedding = tf.keras.layers.Embedding(target_vocab_size, d_model)
-        self.pos_encoding = positional_encoding(maximum_position_encoding, 
-                                                self.d_model)
-
-        self.dec_layers = [DecoderLayer(num_heads, d_model, dff, rate=rate, name=self.name + str(i), partition_config=partition_config) 
-                        for i in range(num_layers)]
-    
-        self.dropout = tf.keras.layers.Dropout(rate)
-
-    def get_config(self):
-        return {
-            'num_layers': self.num_layers,
-            'target_vocab_size': self.target_vocab_size,
-            'maximum_position_encoding': self.maximum_position_encoding,
-            'd_model': self.d_model,
-            'num_heads': self.num_heads,
-            'dff':self.dff,
-            'rate':self.rate,
-            'name':self.name
-            }
-
-    def build(self, input_shape):
-        for i in range(self.num_layers):
-            self.dec_layers[i].build([self.d_model])
-
-
-    def call(self, x, enc_output, enc_mask, combined_mask, training=False):
-
-        seq_len = tf.shape(x)[1]
-        x = self.embedding(x)
-        x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
-        x += self.pos_encoding[:, :seq_len, :]
-
-        x = self.dropout(x, training=training)
-        
-        for i in range(self.num_layers):
-            x = self.dec_layers[i](x, enc_output, combined_mask, enc_mask, training=training)
         return x

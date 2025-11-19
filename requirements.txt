@@ -1,0 +1,4 @@
+tensorflow
+tf-models-official
+tensorflow-datasets
+tensorflow-model-optimization

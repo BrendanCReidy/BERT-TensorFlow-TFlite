@@ -1,11 +1,45 @@
 # BERT &rarr; TensorFlow2 &rarr; TFlite
 
-This repository contains a pipeline for:
-1.  Loading TF1 BERT models in TF2
-2.  Training BERT models for downstream tasks (with or without knowledge distillation)
-3.  Exporting BERT models as TFLite files
+### Getting Started
+Clone
+```
+git clone https://github.com/BrendanCReidy/BERT-TensorFlow-TFlite.git
+cd BERT-TensorFlow-TFlite
+```
 
-### Getting started
+(Optional) Create Virtual Environment (Tested on python 3.10.16)
+```
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Install dependencies
+```
+pip install -r requirements.txt
+```
+### Export Model
+Usage of export.py
+```
+usage: export.py [-h] [--format {float32,int8,edgetpu}] [--model {tiny,mini,medium,base}] [--seq_len SEQ_LEN]
+
+options:
+  -h, --help            show this help message and exit
+  --format {float32,int8,edgetpu}
+  --model {tiny,mini,medium,base}
+                        Bert model type (tiny, mini, medium, base)
+  --seq_len SEQ_LEN     number of tokens model can process
+```
+Example
+```
+python3 export.py --format edgetpu --model mini
+```
+Output
+```
+Saved tflite model to: tflite/BERT-mini-edgetpu.tflite
+```
+*Note: You still need to use the EdgeTPU compiler on the TFLite if you want to deploy this on the coral TPU*
+
+### Training (TFLite export not supported yet)
 
 This codebase was designed to load models from [TensorFlow code and pre-trained models for BERT](https://github.com/google-research/bert). 
 
@@ -24,8 +58,6 @@ wget https://storage.googleapis.com/bert_models/2020_02_20/uncased_L-12_H-768_A-
 unzip uncased_L-12_H-768_A-12.zip
 rm uncased_L-12_H-768_A-12.zip
 ```
-
-### Training the model
 
 Without knowledge distilation:
 ```
