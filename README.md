@@ -76,3 +76,14 @@ For BERT-Tiny student and BERT-Base teacher:
 ```
 python3 train_mrpc_kd.py models/uncased_L-2_H-128_A-2 models/uncased_L-12_H-768_A-12
 ```
+
+### Citation
+If this project was useful for your research, consider citing our paper:
+```
+@inproceedings{reidy2023efficient,
+  title={Efficient deployment of transformer models on edge tpu accelerators: A real system evaluation},
+  author={Reidy, Brendan C and Mohammadi, Mohammadreza and Elbtity, Mohammed E and Zand, Ramtin},
+  booktitle={Architecture and System Support for Transformer Models (ASSYST@ ISCA 2023)},
+  year={2023}
+}
+```
